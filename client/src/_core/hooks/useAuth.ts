@@ -1,94 +1,70 @@
-import { startLogin } from "@/const";
+import { useAuth as useClerkAuth, useClerk, useUser } from "@clerk/react";
 import { trpc } from "@/lib/trpc";
-import { TRPCClientError } from "@trpc/client";
 import { useCallback, useEffect, useMemo } from "react";
 
 type UseAuthOptions = {
+  /** Send anonymous visitors to the sign-in screen instead of rendering children. */
   redirectOnUnauthenticated?: boolean;
+  /** Where to send anonymous visitors. Defaults to Clerk's in-app sign-in route. */
   redirectPath?: string;
 };
 
+/**
+ * Single source of truth for auth state in the client.
+ *
+ * Clerk owns the session; `auth.me` returns this app's mirrored user row (with
+ * `id` and `role`), which is what the rest of the app and the backend rely on.
+ */
 export function useAuth(options?: UseAuthOptions) {
-  // Login is started via startLogin() in the effect below, only when we actually
-  // navigate — never during render. startLogin() mints a one-time nonce + writes
-  // the state cookie, so calling it per render would overwrite the cookie and
-  // desync it from an in-flight login's `state`.
-  const { redirectOnUnauthenticated = false, redirectPath } = options ?? {};
+  const { redirectOnUnauthenticated = false, redirectPath = "/sign-in" } =
+    options ?? {};
+  const { isLoaded: clerkLoaded, isSignedIn } = useClerkAuth();
+  const { user: clerkUser } = useUser();
+  const clerk = useClerk();
   const utils = trpc.useUtils();
 
   const meQuery = trpc.auth.me.useQuery(undefined, {
+    // Only ask the backend who we are once Clerk has a session to present.
+    enabled: clerkLoaded && Boolean(isSignedIn),
     retry: false,
     refetchOnWindowFocus: false,
   });
 
-  const logoutMutation = trpc.auth.logout.useMutation({
-    onSuccess: () => {
-      utils.auth.me.setData(undefined, null);
-    },
-  });
-
   const logout = useCallback(async () => {
     try {
-      await logoutMutation.mutateAsync();
-    } catch (error: unknown) {
-      if (
-        error instanceof TRPCClientError &&
-        error.data?.code === "UNAUTHORIZED"
-      ) {
-        return;
-      }
-      throw error;
+      await clerk.signOut();
     } finally {
-      // Clear the Preview auto-login token mirrored into sessionStorage, so
-      // header-based sessions (Safari ITP / WebView) are logged out too. The
-      // backend cookie is cleared by the logout mutation.
-      try {
-        sessionStorage.removeItem("manus-cookie");
-      } catch {}
       utils.auth.me.setData(undefined, null);
       await utils.auth.me.invalidate();
     }
-  }, [logoutMutation, utils]);
+  }, [clerk, utils]);
 
   const state = useMemo(() => {
-    localStorage.setItem(
-      "manus-runtime-user-info",
-      JSON.stringify(meQuery.data)
-    );
+    const user = isSignedIn ? (meQuery.data ?? null) : null;
     return {
-      user: meQuery.data ?? null,
-      loading: meQuery.isLoading || logoutMutation.isPending,
-      error: meQuery.error ?? logoutMutation.error ?? null,
-      isAuthenticated: Boolean(meQuery.data),
+      user,
+      clerkUser: clerkUser ?? null,
+      loading: !clerkLoaded || (Boolean(isSignedIn) && meQuery.isLoading),
+      error: meQuery.error ?? null,
+      isAuthenticated: Boolean(isSignedIn),
     };
   }, [
+    clerkLoaded,
+    clerkUser,
+    isSignedIn,
     meQuery.data,
     meQuery.error,
     meQuery.isLoading,
-    logoutMutation.error,
-    logoutMutation.isPending,
   ]);
 
   useEffect(() => {
     if (!redirectOnUnauthenticated) return;
-    if (meQuery.isLoading || logoutMutation.isPending) return;
-    if (state.user) return;
+    if (!clerkLoaded) return;
+    if (isSignedIn) return;
     if (typeof window === "undefined") return;
-    if (redirectPath && window.location.pathname === redirectPath) return;
-
-    // Navigate at this moment only. startLogin() mints the nonce + cookie itself.
-    if (redirectPath) {
-      window.location.href = redirectPath;
-    } else {
-      startLogin();
-    }
-  }, [
-    redirectOnUnauthenticated,
-    redirectPath,
-    logoutMutation.isPending,
-    meQuery.isLoading,
-    state.user,
-  ]);
+    if (window.location.pathname === redirectPath) return;
+    window.location.href = redirectPath;
+  }, [clerkLoaded, isSignedIn, redirectOnUnauthenticated, redirectPath]);
 
   return {
     ...state,

@@ -1,4 +1,5 @@
 import { useEffect, useMemo, useState } from "react";
+import { UserButton } from "@clerk/react";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
 import { Label } from "@/components/ui/label";
@@ -61,12 +62,18 @@ export default function Home() {
   return <div className="studio-shell min-h-screen text-white">
     <header className="studio-header"><div className="container flex items-center justify-between py-4">
       <div className="flex items-center gap-3"><div className="studio-mark"><Wand2 className="h-4 w-4" /></div><div><h1 className="text-base font-semibold tracking-[-0.03em]">Production Studio</h1><p className="text-[11px] tracking-wide text-white/45">CREATE PRINT-READY ART PAGES</p></div></div>
-      <span className="studio-badge">Customer Edition</span>
+      <div className="flex items-center gap-3">
+        <span className="studio-badge">Customer Edition</span>
+        {/* Sign-out destination comes from ClerkProvider's afterSignOutUrl. */}
+        <UserButton
+          appearance={{ elements: { avatarBox: "h-8 w-8 ring-1 ring-white/15" } }}
+        />
+      </div>
     </div></header>
     <main className="container py-8 lg:py-12">
       <div className="mb-8 max-w-2xl"><p className="studio-kicker">QUICK CREATE</p><h2 className="mt-2 text-3xl font-semibold tracking-[-0.045em] sm:text-4xl">Make your next printable.</h2><p className="mt-3 max-w-xl text-sm leading-6 text-white/58">Describe what you want to create, select the finished format, and download the completed PDF and individual pages.</p></div>
       <div className="grid gap-6 lg:grid-cols-[minmax(0,0.95fr)_minmax(0,1.05fr)]">
-        <Card className="studio-card"><CardHeader className="pb-5"><CardTitle className="flex items-center gap-2 text-lg"><Sparkles className="h-4 w-4 text-cyan-300" />Create a printable</CardTitle><CardDescription className="text-white/48">Every job is limited to five pages for consistent results.</CardDescription></CardHeader><CardContent className="space-y-6">
+        <Card className="studio-card"><CardHeader className="pb-5"><CardTitle className="flex items-center gap-2 text-lg"><Sparkles className="h-4 w-4 text-[#5c92ff]" />Create a printable</CardTitle><CardDescription className="text-white/48">Every job is limited to five pages for consistent results.</CardDescription></CardHeader><CardContent className="space-y-6">
           <div className="space-y-2"><Label htmlFor="prompt">What do you want to create?</Label><Textarea id="prompt" rows={5} value={prompt} onChange={event => setPrompt(event.target.value)} disabled={isBusy} placeholder="Example: A playful underwater world art page for kids, with friendly sea creatures, large open areas, and bold outlines." className="studio-textarea" /></div>
           <div className="space-y-2.5"><Label>Output style</Label><div className="flex flex-wrap gap-2"><ChoiceButton active={outputStyle === "full-color"} disabled={isBusy} onClick={() => setOutputStyle("full-color")}>Full Color</ChoiceButton><ChoiceButton active={outputStyle === "coloring"} disabled={isBusy} onClick={() => setOutputStyle("coloring")}>Coloring</ChoiceButton></div></div>
           <div className="space-y-2.5"><Label>Finished size</Label><div className="flex flex-wrap gap-2">{SIZE_OPTIONS.map(option => <ChoiceButton key={option.id} active={sizePreset === option.id} disabled={isBusy} onClick={() => setSizePreset(option.id)}>{option.label}</ChoiceButton>)}</div></div>
@@ -75,7 +82,7 @@ export default function Home() {
         </CardContent></Card>
         <Card className="studio-card studio-output-card"><CardHeader className="pb-5"><CardTitle className="text-lg">Your output</CardTitle><CardDescription className="text-white/48">Live progress and completed downloads appear here.</CardDescription></CardHeader><CardContent>
           {!job && <div className="studio-empty flex min-h-[420px] flex-col items-center justify-center text-center"><div className="studio-empty-icon"><ImageIcon className="h-6 w-6" /></div><h3 className="mt-5 text-sm font-medium">Your pages will appear here</h3><p className="mt-2 max-w-60 text-xs leading-5 text-white/42">Describe your idea, then click Generate to begin.</p></div>}
-          {job && <div className="space-y-5"><div className="rounded-xl border border-white/8 bg-black/20 p-4"><div className="flex items-start justify-between gap-4"><div><p className="text-sm font-medium">{job.statusMessage}</p><p className="mt-1 text-xs text-white/43">{job.currentPage} of {job.pageCount} pages processed</p></div>{isBusy && <Loader2 className="mt-0.5 h-4 w-4 animate-spin text-cyan-200" />}</div><Progress value={progress} className="mt-4 h-1.5 bg-white/8" /></div>
+          {job && <div className="space-y-5"><div className="rounded-xl border border-white/8 bg-black/20 p-4"><div className="flex items-start justify-between gap-4"><div><p className="text-sm font-medium">{job.statusMessage}</p><p className="mt-1 text-xs text-white/43">{job.currentPage} of {job.pageCount} pages processed</p></div>{isBusy && <Loader2 className="mt-0.5 h-4 w-4 animate-spin text-[#5c92ff]" />}</div><Progress value={progress} className="mt-4 h-1.5 bg-white/10 [&>div]:bg-gradient-to-r [&>div]:from-[#5c92ff] [&>div]:to-[#0047cc]" /></div>
             {job.errorMessage && <p className="rounded-lg border border-red-400/20 bg-red-400/8 p-3 text-xs leading-5 text-red-100">{job.errorMessage}</p>}
             {completedPages.length > 0 && <div className="grid grid-cols-2 gap-3 sm:grid-cols-3">{completedPages.map(page => <a key={page.pageNumber} href={page.imageUrl} target="_blank" rel="noreferrer" className="studio-thumbnail"><img src={page.imageUrl} alt={`Completed page ${page.pageNumber}`} /><span>Page {page.pageNumber}</span></a>)}</div>}
             {job.pdfUrl && <div className="grid gap-2 sm:grid-cols-2"><Button asChild className="studio-download"><a href={job.pdfUrl} download={job.filename}><Download className="mr-2 h-4 w-4" />Download PDF</a></Button><Button asChild variant="outline" className="studio-preview"><a href={job.pdfUrl} target="_blank" rel="noreferrer"><FileText className="mr-2 h-4 w-4" />Preview</a></Button></div>}

@@ -6,9 +6,11 @@ import { generateFalImage, type FalAspectRatio } from "./falProvider";
 import { assembleGenerationPdf } from "./generationPdf";
 import {
   appendPageResult,
+  assertJobOwnedByUser,
   claimNextPage,
   createGenerationJob,
   getGenerationJob,
+  getGenerationJobForUser,
   type PublicGenerationJob,
   type StoredGenerationOptions,
   updateGenerationJob,
@@ -132,15 +134,25 @@ async function finalizeIfComplete(jobId: string): Promise<PublicGenerationJob | 
   return getGenerationJob(jobId);
 }
 
-export async function startCustomerGeneration(input: CustomerQuickCreateInput): Promise<PublicGenerationJob> {
-  return createGenerationJob(normalizeCustomerOptions(input));
+export async function startCustomerGeneration(
+  input: CustomerQuickCreateInput,
+  /** Clerk user id of the signed-in customer that owns this job. */
+  userId: string
+): Promise<PublicGenerationJob> {
+  return createGenerationJob(normalizeCustomerOptions(input), userId);
 }
 
 /**
  * Poll-driven job processor: every request claims at most one page. This keeps
  * multi-page work observable and avoids unbounded background execution.
  */
-export async function advanceCustomerGeneration(jobId: string): Promise<PublicGenerationJob | null> {
+export async function advanceCustomerGeneration(
+  jobId: string,
+  /** Clerk user id of the signed-in customer; jobs owned by others are rejected. */
+  userId: string
+): Promise<PublicGenerationJob | null> {
+  await assertJobOwnedByUser(jobId, userId);
+
   const claimed = await claimNextPage(jobId);
   if (!claimed) return finalizeIfComplete(jobId);
 
@@ -174,6 +186,10 @@ export async function advanceCustomerGeneration(jobId: string): Promise<PublicGe
   return finalizeIfComplete(jobId);
 }
 
-export async function getCustomerGeneration(jobId: string): Promise<PublicGenerationJob | null> {
-  return getGenerationJob(jobId);
+export async function getCustomerGeneration(
+  jobId: string,
+  /** Clerk user id of the signed-in customer; jobs owned by others are hidden. */
+  userId: string
+): Promise<PublicGenerationJob | null> {
+  return getGenerationJobForUser(jobId, userId);
 }

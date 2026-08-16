@@ -1,66 +1,50 @@
 import { trpc } from "@/lib/trpc";
-import { COOKIE_NAME, UNAUTHED_ERR_MSG } from '@shared/const';
+import { ClerkProvider, getToken } from "@clerk/react";
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
-import { httpBatchLink, TRPCClientError } from "@trpc/client";
+import { httpBatchLink } from "@trpc/client";
 import { createRoot } from "react-dom/client";
 import superjson from "superjson";
 import App from "./App";
-import { startLogin } from "./const";
+import { CLERK_PUBLISHABLE_KEY } from "./const";
+import { clerkAppearance } from "./lib/clerkAppearance";
 import "./index.css";
 
 const queryClient = new QueryClient();
 
-const redirectToLoginIfUnauthorized = (error: unknown) => {
-  if (!(error instanceof TRPCClientError)) return;
-  if (typeof window === "undefined") return;
-
-  const isUnauthorized = error.message === UNAUTHED_ERR_MSG;
-
-  if (!isUnauthorized) return;
-
-  startLogin();
-};
-
 queryClient.getQueryCache().subscribe(event => {
   if (event.type === "updated" && event.action.type === "error") {
-    const error = event.query.state.error;
-    redirectToLoginIfUnauthorized(error);
-    console.error("[API Query Error]", error);
+    console.error("[API Query Error]", event.query.state.error);
   }
 });
 
 queryClient.getMutationCache().subscribe(event => {
   if (event.type === "updated" && event.action.type === "error") {
-    const error = event.mutation.state.error;
-    redirectToLoginIfUnauthorized(error);
-    console.error("[API Mutation Error]", error);
+    console.error("[API Mutation Error]", event.mutation.state.error);
   }
 });
+
+/**
+ * Clerk stores its session in a first-party cookie, which `credentials: "include"`
+ * already sends. The bearer token is added as well so the API keeps working in
+ * contexts where cookies are blocked (Safari ITP, private windows, WebViews).
+ */
+async function getClerkToken(): Promise<string | null> {
+  try {
+    return await getToken();
+  } catch {
+    // No session, offline, or Clerk still loading: fall back to cookie auth.
+    return null;
+  }
+}
 
 const trpcClient = trpc.createClient({
   links: [
     httpBatchLink({
       url: "/api/trpc",
       transformer: superjson,
-      headers() {
-        // Preview auto-login fallback: when the browser blocks iframe cookies
-        // (Safari ITP / private browsing / WebView), the runtime mirrors the
-        // session into sessionStorage so we can forward it as a Bearer token.
-        // The regular OAuth cookie flow keeps working and takes priority server-side.
-        try {
-          const raw = sessionStorage.getItem("manus-cookie");
-          if (raw) {
-            const prefix = `${COOKIE_NAME}=`;
-            const pair = raw.split(";").find(s => s.trim().startsWith(prefix));
-            const token = pair?.trim().slice(prefix.length);
-            if (token) {
-              return { Authorization: `Bearer ${token}` };
-            }
-          }
-        } catch {
-          // sessionStorage unavailable
-        }
-        return {};
+      async headers() {
+        const token = await getClerkToken();
+        return token ? { Authorization: `Bearer ${token}` } : {};
       },
       fetch(input, init) {
         return globalThis.fetch(input, {
@@ -72,10 +56,23 @@ const trpcClient = trpc.createClient({
   ],
 });
 
+if (!CLERK_PUBLISHABLE_KEY) {
+  // Fail loudly rather than rendering an app that can never sign anyone in.
+  console.error(
+    "[Clerk] VITE_CLERK_PUBLISHABLE_KEY is missing. Set it in the build environment."
+  );
+}
+
 createRoot(document.getElementById("root")!).render(
-  <trpc.Provider client={trpcClient} queryClient={queryClient}>
-    <QueryClientProvider client={queryClient}>
-      <App />
-    </QueryClientProvider>
-  </trpc.Provider>
+  <ClerkProvider
+    publishableKey={CLERK_PUBLISHABLE_KEY ?? ""}
+    afterSignOutUrl="/sign-in"
+    appearance={clerkAppearance}
+  >
+    <trpc.Provider client={trpcClient} queryClient={queryClient}>
+      <QueryClientProvider client={queryClient}>
+        <App />
+      </QueryClientProvider>
+    </trpc.Provider>
+  </ClerkProvider>
 );
