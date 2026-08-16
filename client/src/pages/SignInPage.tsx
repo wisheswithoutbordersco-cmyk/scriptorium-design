@@ -17,7 +17,7 @@ export function AuthScreen({ mode }: AuthScreenProps) {
           <Wand2 className="h-5 w-5" />
         </div>
         <h1 className="text-2xl font-semibold tracking-[-0.04em] sm:text-3xl">
-          Scriptorium Production Studio
+          Scriptorium Design
         </h1>
         <p className="mt-2 max-w-sm text-sm leading-6 text-white/55">
           {mode === "sign-in"
@@ -26,26 +26,22 @@ export function AuthScreen({ mode }: AuthScreenProps) {
         </p>
       </div>
 
-      <div className="w-full max-w-md">
+      <div className="w-full max-w-md [&_.cl-rootBox]:w-full [&_.cl-card]:bg-transparent [&_.cl-card]:shadow-none">
         {mode === "sign-in" ? (
           <SignIn
-            routing="path"
-            path="/sign-in"
             signUpUrl="/sign-up"
-            fallbackRedirectUrl="/"
+            forceRedirectUrl="/"
           />
         ) : (
           <SignUp
-            routing="path"
-            path="/sign-up"
             signInUrl="/sign-in"
-            fallbackRedirectUrl="/"
+            forceRedirectUrl="/"
           />
         )}
       </div>
 
       <p className="mt-8 text-[11px] tracking-[0.14em] text-white/30">
-        WISHES WITHOUT BORDERS · PRODUCTION STUDIO
+        LANE DIGITAL WORKS · SCRIPTORIUM DESIGN
       </p>
     </div>
   );
