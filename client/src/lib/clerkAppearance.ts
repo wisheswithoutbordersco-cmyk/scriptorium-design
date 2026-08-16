@@ -24,7 +24,7 @@ export const clerkAppearance: ClerkProviderProps["appearance"] = {
   elements: {
     rootBox: "w-full",
     cardBox:
-      "border border-white/10 bg-[#0d0f13]/95 shadow-[0_28px_80px_rgba(0,0,0,0.65)] backdrop-blur-xl",
+      "border-0 bg-transparent shadow-none",
     card: "bg-transparent",
     headerTitle: "text-white tracking-[-0.03em]",
     headerSubtitle: "text-white/55",
