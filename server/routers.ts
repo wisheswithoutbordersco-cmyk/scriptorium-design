@@ -6,6 +6,7 @@ import {
   getCustomerGeneration,
   startCustomerGeneration,
 } from "./generation";
+import { getUserGenerationCount } from "./generationStore";
 import { protectedProcedure, publicProcedure, router } from "./_core/trpc";
 
 const jobIdInput = z.object({ jobId: z.string().min(1) }).strict();
@@ -23,6 +24,13 @@ export const appRouter = router({
   }),
 
   generation: router({
+    /** Returns how many generations the user has used and their limit. */
+    usage: protectedProcedure.query(async ({ ctx }) => {
+      const count = await getUserGenerationCount(ctx.user.openId);
+      const limit = 5; // FREE_TIER_LIMIT
+      const isOwner = process.env.OWNER_OPEN_ID === ctx.user.openId;
+      return { used: count, limit, remaining: isOwner ? 999 : Math.max(0, limit - count), unlimited: isOwner };
+    }),
     start: protectedProcedure
       .input(customerQuickCreateSchema)
       .mutation(({ ctx, input }) => startCustomerGeneration(input, ctx.user.openId)),

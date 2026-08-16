@@ -11,6 +11,7 @@ import {
   createGenerationJob,
   getGenerationJob,
   getGenerationJobForUser,
+  getUserGenerationCount,
   type PublicGenerationJob,
   type StoredGenerationOptions,
   updateGenerationJob,
@@ -134,11 +135,24 @@ async function finalizeIfComplete(jobId: string): Promise<PublicGenerationJob | 
   return getGenerationJob(jobId);
 }
 
+/** Free tier generation limit. Users without a paid subscription get this many jobs. */
+const FREE_TIER_LIMIT = 5;
+
 export async function startCustomerGeneration(
   input: CustomerQuickCreateInput,
   /** Clerk user id of the signed-in customer that owns this job. */
   userId: string
 ): Promise<PublicGenerationJob> {
+  // Enforce generation limits (admin/owner bypasses)
+  const ownerOpenId = process.env.OWNER_OPEN_ID;
+  if (!ownerOpenId || userId !== ownerOpenId) {
+    const count = await getUserGenerationCount(userId);
+    if (count >= FREE_TIER_LIMIT) {
+      throw new Error(
+        `You've used all ${FREE_TIER_LIMIT} free generations. Subscribe to a plan for unlimited access.`
+      );
+    }
+  }
   return createGenerationJob(normalizeCustomerOptions(input), userId);
 }
 

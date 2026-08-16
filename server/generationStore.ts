@@ -22,6 +22,19 @@ function toPublicJob(job: GenerationJob): PublicGenerationJob {
   return publicJob;
 }
 
+/**
+ * Count total generation jobs for a user (used for free-tier limit enforcement).
+ */
+export async function getUserGenerationCount(userId: string): Promise<number> {
+  const db = await getDb();
+  if (!db) return 0;
+  const result = await db
+    .select({ count: sql<number>`count(*)::int` })
+    .from(generationJobs)
+    .where(eq(generationJobs.userId, userId));
+  return result[0]?.count ?? 0;
+}
+
 export async function createGenerationJob(
   options: StoredGenerationOptions,
   /** Clerk user id of the signed-in owner. */
