@@ -26,8 +26,12 @@ async function downloadImage(url: string): Promise<Buffer> {
 }
 
 function storagePathFromPublicUrl(url: string): string {
-  const prefix = "/manus-storage/";
-  return url.startsWith(prefix) ? url.slice(prefix.length) : url;
+  const manusPrefix = "/manus-storage/";
+  if (url.startsWith(manusPrefix)) return url.slice(manusPrefix.length);
+  const publicPrefix = "/storage/v1/object/public/production-studio/";
+  const idx = url.indexOf(publicPrefix);
+  if (idx !== -1) return url.slice(idx + publicPrefix.length);
+  return url;
 }
 
 export async function assembleGenerationPdf(job: GenerationJob): Promise<string> {
