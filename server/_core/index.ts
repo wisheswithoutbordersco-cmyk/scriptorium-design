@@ -3,11 +3,13 @@ import express from "express";
 import { createServer } from "http";
 import net from "net";
 import { createExpressMiddleware } from "@trpc/server/adapters/express";
+import { migrate } from "drizzle-orm/node-postgres/migrator";
 import { registerClerkAuth } from "./clerkAuth";
 import { registerStorageProxy } from "./storageProxy";
 import { appRouter } from "../routers";
 import { createContext } from "./context";
 import { serveStatic, setupVite } from "./vite";
+import { getDb } from "../db";
 
 function isPortAvailable(port: number): Promise<boolean> {
   return new Promise(resolve => {
@@ -29,6 +31,15 @@ async function findAvailablePort(startPort: number = 3000): Promise<number> {
 }
 
 async function startServer() {
+  // Auto-run database migrations on startup
+  try {
+    const db = await getDb();
+    await migrate(db, { migrationsFolder: "./drizzle" });
+    console.log("Database migrations applied successfully");
+  } catch (error) {
+    console.warn("[DB] Migration warning:", String(error));
+  }
+
   const app = express();
   const server = createServer(app);
   // Configure body parser with larger size limit for file uploads
