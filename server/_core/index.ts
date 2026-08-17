@@ -9,7 +9,6 @@ import { registerStorageProxy } from "./storageProxy";
 import { appRouter } from "../routers";
 import { createContext } from "./context";
 import { serveStatic, setupVite } from "./vite";
-import { getDb } from "../db";
 
 function isPortAvailable(port: number): Promise<boolean> {
   return new Promise(resolve => {
@@ -32,12 +31,23 @@ async function findAvailablePort(startPort: number = 3000): Promise<number> {
 
 async function startServer() {
   // Auto-run database migrations on startup
-  try {
-    const db = await getDb();
-    await migrate(db, { migrationsFolder: "./drizzle" });
-    console.log("Database migrations applied successfully");
-  } catch (error) {
-    console.warn("[DB] Migration warning:", String(error));
+  if (process.env.DATABASE_URL) {
+    try {
+      const { Pool } = await import("pg");
+      const { drizzle } = await import("drizzle-orm/node-postgres");
+      const pool = new Pool({
+        connectionString: process.env.DATABASE_URL,
+        ssl: /\.railway\.internal/i.test(process.env.DATABASE_URL) ? undefined : { rejectUnauthorized: false },
+      });
+      const migrationDb = drizzle(pool);
+      await migrate(migrationDb, { migrationsFolder: "./drizzle" });
+      console.log("Database migrations applied successfully");
+      await pool.end();
+    } catch (error) {
+      console.warn("[DB] Migration warning:", String(error));
+    }
+  } else {
+    console.warn("[DB] No DATABASE_URL set, skipping migrations");
   }
 
   const app = express();
