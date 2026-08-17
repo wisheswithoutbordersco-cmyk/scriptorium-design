@@ -16,7 +16,7 @@ export async function generatePublicationImage(prompt: string): Promise<Buffer> 
       "Content-Type": "application/json",
     },
     body: JSON.stringify({
-      model: "gpt-image-1",
+      model: "gpt-image-2",
       prompt: `${prompt}\n\n${OPENAI_PUBLICATION_RENDER_REQUIREMENTS}`,
       n: 1,
       quality: "high",
