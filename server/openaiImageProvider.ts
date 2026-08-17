@@ -16,7 +16,7 @@ export async function generatePublicationImage(prompt: string): Promise<Buffer> 
       "Content-Type": "application/json",
     },
     body: JSON.stringify({
-      model: "gpt-image-2",
+      model: "gpt-image-1",
       prompt: `${prompt}\n\n${OPENAI_PUBLICATION_RENDER_REQUIREMENTS}`,
       n: 1,
       quality: "high",
@@ -25,13 +25,31 @@ export async function generatePublicationImage(prompt: string): Promise<Buffer> 
   });
 
   const payload = await response.json().catch(() => ({})) as {
-    data?: Array<{ b64_json?: string }>;
-    error?: { message?: string };
+    data?: Array<{ b64_json?: string; url?: string }>;
+    error?: { message?: string; code?: string; type?: string };
   };
-  if (!response.ok) throw new Error(`OpenAI publication image generation failed (${response.status}): ${payload.error?.message ?? "unknown error"}`);
-  const base64Image = payload.data?.[0]?.b64_json;
-  if (!base64Image) throw new Error("OpenAI returned no publication image data");
-  return Buffer.from(base64Image, "base64");
+  if (!response.ok) {
+    console.error("[ImageGen] OpenAI error:", JSON.stringify(payload.error));
+    throw new Error(`OpenAI publication image generation failed (${response.status}): ${payload.error?.message ?? "unknown error"}`);
+  }
+
+  const imageData = payload.data?.[0];
+  if (!imageData) throw new Error("OpenAI returned no publication image data");
+
+  // gpt-image-1 returns b64_json by default
+  if (imageData.b64_json) {
+    return Buffer.from(imageData.b64_json, "base64");
+  }
+
+  // Fallback: if URL is returned, download the image
+  if (imageData.url) {
+    const imgResponse = await fetch(imageData.url);
+    if (!imgResponse.ok) throw new Error("Failed to download generated image from URL");
+    const arrayBuffer = await imgResponse.arrayBuffer();
+    return Buffer.from(arrayBuffer);
+  }
+
+  throw new Error("OpenAI returned neither b64_json nor url for the image");
 }
 
 export { OPENAI_PUBLICATION_RENDER_REQUIREMENTS };
