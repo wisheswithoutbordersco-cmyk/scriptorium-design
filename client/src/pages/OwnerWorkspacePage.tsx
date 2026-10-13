@@ -48,8 +48,14 @@ export default function OwnerWorkspacePage() {
         setError("Too many attempts. Please wait before trying again.");
       } else if (response.status === 503) {
         setError("Owner login is not configured yet. Please try again later.");
+      } else if (response.status === 401) {
+        setError("The submitted owner password did not match (HTTP 401).");
+      } else if (response.status === 403) {
+        setError(
+          "The sign-in request was blocked by the app origin check (HTTP 403). Reload this app page and try again."
+        );
       } else {
-        setError("That owner password was not accepted.");
+        setError(`Owner sign-in failed (HTTP ${response.status}).`);
       }
     } catch {
       setError("Unable to reach the owner sign-in service. Please try again.");
