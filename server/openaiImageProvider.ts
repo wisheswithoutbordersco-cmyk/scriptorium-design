@@ -1,6 +1,17 @@
 const OPENAI_IMAGES_ENDPOINT = "https://api.openai.com/v1/images/generations";
+export const OPENAI_PUBLICATION_IMAGE_MODEL = "gpt-image-2.5-sunburst";
 
 const OPENAI_PUBLICATION_RENDER_REQUIREMENTS = `RENDER QUALITY REQUIREMENTS: Create one complete edge-to-edge printable page, never a photographed paper, mockup, frame, or page on a background. Use premium publishing quality, crisp clean edges, strong contrast, precise text rendering, clearly separated content groups, refined detail, and professional print-ready composition. For full-color artwork, use a bold saturated vivid palette with rich clean color separation. Avoid beige, cream, muted earth tones, dusty, desaturated, washed-out, or soft pastel treatments unless explicitly requested.`;
+
+export function buildPublicationImageRequest(prompt: string) {
+  return {
+    model: OPENAI_PUBLICATION_IMAGE_MODEL,
+    prompt: `${prompt}\n\n${OPENAI_PUBLICATION_RENDER_REQUIREMENTS}`,
+    n: 1,
+    quality: "high" as const,
+    size: "1024x1536" as const,
+  };
+}
 
 function getOpenAIKey(): string {
   const key = process.env.OPENAI_API_KEY?.trim();
@@ -15,13 +26,7 @@ export async function generatePublicationImage(prompt: string): Promise<Buffer> 
       Authorization: `Bearer ${getOpenAIKey()}`,
       "Content-Type": "application/json",
     },
-    body: JSON.stringify({
-      model: "gpt-image-2",
-      prompt: `${prompt}\n\n${OPENAI_PUBLICATION_RENDER_REQUIREMENTS}`,
-      n: 1,
-      quality: "high",
-      size: "1024x1536",
-    }),
+    body: JSON.stringify(buildPublicationImageRequest(prompt)),
   });
 
   const payload = await response.json().catch(() => ({})) as {
