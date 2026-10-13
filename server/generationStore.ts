@@ -1,24 +1,48 @@
 import { and, eq, lt, sql } from "drizzle-orm";
 import { nanoid } from "nanoid";
-import { generationJobs, type GenerationJob, type GenerationPageResult } from "../drizzle/schema";
+import {
+  generationJobs,
+  type GenerationJob,
+  type GenerationPageResult,
+  type GenerationReferenceImage,
+} from "../drizzle/schema";
 import { getDb } from "./db";
 
-export type GenerationStatus = "queued" | "generating" | "assembling" | "complete" | "partial" | "error";
+export type GenerationStatus =
+  | "queued"
+  | "generating"
+  | "assembling"
+  | "complete"
+  | "partial"
+  | "error";
 
 export type StoredGenerationOptions = {
   prompt: string;
   outputStyle: "full-color" | "coloring";
-  sizePreset: "8.5x11-portrait" | "8.5x11-landscape" | "11x14" | "16x20" | "square";
+  sizePreset:
+    | "8.5x11-portrait"
+    | "8.5x11-landscape"
+    | "11x14"
+    | "16x20"
+    | "square";
   pageCount: number;
   branding: "none";
   showPageNumbers: false;
   upscale: false;
+  referenceImages: GenerationReferenceImage[];
 };
 
-export type PublicGenerationJob = Omit<GenerationJob, "processing">;
+export type PublicGenerationJob = Omit<
+  GenerationJob,
+  "processing" | "referenceImages"
+>;
 
 function toPublicJob(job: GenerationJob): PublicGenerationJob {
-  const { processing: _processing, ...publicJob } = job;
+  const {
+    processing: _processing,
+    referenceImages: _referenceImages,
+    ...publicJob
+  } = job;
   return publicJob;
 }
 
@@ -51,6 +75,8 @@ export async function createGenerationJob(
     outputStyle: options.outputStyle,
     sizePreset: options.sizePreset,
     pageCount: options.pageCount,
+    referenceImages:
+      options.referenceImages.length > 0 ? options.referenceImages : null,
     statusMessage: "Ready to generate",
     pageResults: [],
     filename: `scriptorium-${Date.now()}.pdf`,
@@ -61,14 +87,22 @@ export async function createGenerationJob(
   return toPublicJob(job);
 }
 
-async function getGenerationJobInternal(id: string): Promise<GenerationJob | null> {
+async function getGenerationJobInternal(
+  id: string
+): Promise<GenerationJob | null> {
   const db = await getDb();
   if (!db) throw new Error("The generation database is unavailable");
-  const [job] = await db.select().from(generationJobs).where(eq(generationJobs.id, id)).limit(1);
+  const [job] = await db
+    .select()
+    .from(generationJobs)
+    .where(eq(generationJobs.id, id))
+    .limit(1);
   return job ?? null;
 }
 
-export async function getGenerationJob(id: string): Promise<PublicGenerationJob | null> {
+export async function getGenerationJob(
+  id: string
+): Promise<PublicGenerationJob | null> {
   const job = await getGenerationJobInternal(id);
   return job ? toPublicJob(job) : null;
 }
@@ -87,10 +121,14 @@ export async function getGenerationJobForUser(
   return toPublicJob(job);
 }
 
-export async function assertJobOwnedByUser(id: string, userId: string): Promise<GenerationJob> {
+export async function assertJobOwnedByUser(
+  id: string,
+  userId: string
+): Promise<GenerationJob> {
   const job = await getGenerationJobInternal(id);
   if (!job) throw new Error("Generation job not found");
-  if (job.userId && job.userId !== userId) throw new Error("Generation job not found");
+  if (job.userId && job.userId !== userId)
+    throw new Error("Generation job not found");
   return job;
 }
 
@@ -123,7 +161,17 @@ export async function claimNextPage(id: string): Promise<GenerationJob | null> {
 
 export async function updateGenerationJob(
   id: string,
-  updates: Partial<Pick<GenerationJob, "status" | "statusMessage" | "pdfUrl" | "errorMessage" | "processing">>
+  updates: Partial<
+    Pick<
+      GenerationJob,
+      | "status"
+      | "statusMessage"
+      | "pdfUrl"
+      | "errorMessage"
+      | "processing"
+      | "referenceImages"
+    >
+  >
 ): Promise<void> {
   const db = await getDb();
   if (!db) throw new Error("The generation database is unavailable");

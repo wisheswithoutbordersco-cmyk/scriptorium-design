@@ -11,7 +11,10 @@ import {
 } from "drizzle-orm/pg-core";
 
 export const userRoleEnum = pgEnum("user_role", ["user", "admin"]);
-export const outputStyleEnum = pgEnum("output_style", ["full-color", "coloring"]);
+export const outputStyleEnum = pgEnum("output_style", [
+  "full-color",
+  "coloring",
+]);
 export const generationStatusEnum = pgEnum("generation_status", [
   "queued",
   "generating",
@@ -43,9 +46,15 @@ export const users = pgTable("users", {
   /** Auth provider used for the session. `clerk` for all new sign-ins. */
   loginMethod: varchar("loginMethod", { length: 64 }),
   role: userRoleEnum("role").default("user").notNull(),
-  createdAt: timestamp("createdAt", { withTimezone: true }).defaultNow().notNull(),
-  updatedAt: timestamp("updatedAt", { withTimezone: true }).defaultNow().notNull(),
-  lastSignedIn: timestamp("lastSignedIn", { withTimezone: true }).defaultNow().notNull(),
+  createdAt: timestamp("createdAt", { withTimezone: true })
+    .defaultNow()
+    .notNull(),
+  updatedAt: timestamp("updatedAt", { withTimezone: true })
+    .defaultNow()
+    .notNull(),
+  lastSignedIn: timestamp("lastSignedIn", { withTimezone: true })
+    .defaultNow()
+    .notNull(),
 });
 
 export type User = typeof users.$inferSelect;
@@ -56,6 +65,19 @@ export type GenerationPageResult = {
   imageUrl: string;
   status: "success" | "error";
   error?: string;
+};
+
+export type ReferenceImageRole =
+  | "overall"
+  | "face-identity"
+  | "body-pose"
+  | "style-color"
+  | "object-scene";
+
+export type GenerationReferenceImage = {
+  data: string;
+  mimeType: "image/jpeg" | "image/png" | "image/webp";
+  role: ReferenceImageRole;
 };
 
 export const generationJobs = pgTable("generationJobs", {
@@ -69,6 +91,9 @@ export const generationJobs = pgTable("generationJobs", {
   outputStyle: outputStyleEnum("outputStyle").notNull(),
   sizePreset: varchar("sizePreset", { length: 32 }).notNull(),
   pageCount: integer("pageCount").notNull(),
+  referenceImages: jsonb("referenceImages")
+    .$type<GenerationReferenceImage[] | null>()
+    .default(null),
   currentPage: integer("currentPage").notNull().default(0),
   processing: boolean("processing").notNull().default(false),
   status: generationStatusEnum("status").notNull().default("queued"),
@@ -77,8 +102,12 @@ export const generationJobs = pgTable("generationJobs", {
   pdfUrl: text("pdfUrl"),
   filename: varchar("filename", { length: 255 }).notNull(),
   errorMessage: text("errorMessage"),
-  createdAt: timestamp("createdAt", { withTimezone: true }).defaultNow().notNull(),
-  updatedAt: timestamp("updatedAt", { withTimezone: true }).defaultNow().notNull(),
+  createdAt: timestamp("createdAt", { withTimezone: true })
+    .defaultNow()
+    .notNull(),
+  updatedAt: timestamp("updatedAt", { withTimezone: true })
+    .defaultNow()
+    .notNull(),
 });
 
 export type GenerationJob = typeof generationJobs.$inferSelect;

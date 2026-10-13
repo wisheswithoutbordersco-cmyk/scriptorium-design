@@ -17,8 +17,25 @@ import {
   updateGenerationJob,
 } from "./generationStore";
 import { storagePut } from "./storage";
+import type {
+  GenerationReferenceImage,
+  ReferenceImageRole,
+} from "../drizzle/schema";
 
 export const MAX_PAGE_COUNT = 5;
+export const MAX_REFERENCE_IMAGES = 4;
+const MAX_REFERENCE_IMAGE_BYTES = 5 * 1024 * 1024;
+const MAX_TOTAL_REFERENCE_IMAGE_BYTES = 16 * 1024 * 1024;
+const MAX_REFERENCE_IMAGE_BASE64_CHARS =
+  Math.ceil(MAX_REFERENCE_IMAGE_BYTES / 3) * 4;
+
+const referenceImageRoles = [
+  "overall",
+  "face-identity",
+  "body-pose",
+  "style-color",
+  "object-scene",
+] as const satisfies readonly ReferenceImageRole[];
 
 const sizePresetSchema = z.enum([
   "8.5x11-portrait",
@@ -29,29 +46,60 @@ const sizePresetSchema = z.enum([
 ]);
 
 /** The public API intentionally contains no branding, page-number, or upscale fields. */
-export const customerQuickCreateSchema = z.object({
-  prompt: z.string().trim().min(3, "Please enter a more detailed prompt").max(2_000),
-  outputStyle: z.enum(["full-color", "coloring"]),
-  sizePreset: sizePresetSchema,
-  pageCount: z.number().int().min(1).max(MAX_PAGE_COUNT),
-}).strict();
+export const customerQuickCreateSchema = z
+  .object({
+    prompt: z
+      .string()
+      .trim()
+      .min(3, "Please enter a more detailed prompt")
+      .max(2_000),
+    outputStyle: z.enum(["full-color", "coloring"]),
+    sizePreset: sizePresetSchema,
+    pageCount: z.number().int().min(1).max(MAX_PAGE_COUNT),
+    referenceImages: z
+      .array(
+        z
+          .object({
+            data: z.string().min(1).max(MAX_REFERENCE_IMAGE_BASE64_CHARS),
+            mimeType: z.enum(["image/jpeg", "image/png", "image/webp"]),
+            role: z.enum(referenceImageRoles),
+          })
+          .strict()
+      )
+      .max(MAX_REFERENCE_IMAGES)
+      .optional(),
+  })
+  .strict();
 
 type CustomerQuickCreateInput = z.infer<typeof customerQuickCreateSchema>;
 
-const sizeDefinitions: Record<StoredGenerationOptions["sizePreset"], { label: string; aspect: FalAspectRatio }> = {
+const sizeDefinitions: Record<
+  StoredGenerationOptions["sizePreset"],
+  { label: string; aspect: FalAspectRatio }
+> = {
   "8.5x11-portrait": { label: "8.5×11 inch portrait", aspect: "portrait_4_3" },
-  "8.5x11-landscape": { label: "8.5×11 inch landscape", aspect: "landscape_4_3" },
+  "8.5x11-landscape": {
+    label: "8.5×11 inch landscape",
+    aspect: "landscape_4_3",
+  },
   "11x14": { label: "11×14 inch portrait", aspect: "portrait_4_3" },
   "16x20": { label: "16×20 inch portrait", aspect: "portrait_4_3" },
   square: { label: "10×10 inch square", aspect: "square" },
 };
 
-const COLORING_NEGATIVE_PROMPT = "No color, no gray tones, no shading, no text, no words, no letters, no numbers, no watermark, no signatures, no blur, no clutter.";
+const COLORING_NEGATIVE_PROMPT =
+  "No color, no gray tones, no shading, no text, no words, no letters, no numbers, no watermark, no signatures, no blur, no clutter.";
 
-export function normalizeCustomerOptions(input: unknown): StoredGenerationOptions {
+export function normalizeCustomerOptions(
+  input: unknown
+): StoredGenerationOptions {
   const parsed = customerQuickCreateSchema.parse(input);
+  const referenceImages = normalizeReferenceImages(
+    parsed.referenceImages ?? []
+  );
   return {
     ...parsed,
+    referenceImages,
     // Operator-only options are fixed here and are not accepted from the public API.
     branding: "none",
     showPageNumbers: false,
@@ -59,11 +107,79 @@ export function normalizeCustomerOptions(input: unknown): StoredGenerationOption
   };
 }
 
-function fallbackComposition(options: StoredGenerationOptions, pageIndex: number): string {
+export function normalizeReferenceImages(
+  input: GenerationReferenceImage[]
+): GenerationReferenceImage[] {
+  let totalBytes = 0;
+  return input.map((image, index) => {
+    const data = image.data.trim();
+    if (data.length > MAX_REFERENCE_IMAGE_BASE64_CHARS) {
+      throw new Error(`Each reference image must be smaller than 5 MB`);
+    }
+    if (!data || data.length % 4 !== 0)
+      throw new Error(
+        `Reference image ${index + 1} is not valid base64 image data`
+      );
+    const padding = data.endsWith("==") ? 2 : data.endsWith("=") ? 1 : 0;
+    const decodedSize = (data.length / 4) * 3 - padding;
+    if (decodedSize > MAX_REFERENCE_IMAGE_BYTES) {
+      throw new Error(`Each reference image must be smaller than 5 MB`);
+    }
+    if (!/^[A-Za-z0-9+/]+={0,2}$/.test(data))
+      throw new Error(
+        `Reference image ${index + 1} is not valid base64 image data`
+      );
+    const bytes = Buffer.from(data, "base64");
+    if (bytes.length === 0 || bytes.length > MAX_REFERENCE_IMAGE_BYTES) {
+      throw new Error(`Each reference image must be smaller than 5 MB`);
+    }
+    if (bytes.toString("base64") !== data)
+      throw new Error(
+        `Reference image ${index + 1} is not valid base64 image data`
+      );
+    totalBytes += bytes.length;
+    if (totalBytes > MAX_TOTAL_REFERENCE_IMAGE_BYTES) {
+      throw new Error("Reference images together must be smaller than 16 MB");
+    }
+    return { ...image, data };
+  });
+}
+
+const REFERENCE_ROLE_INSTRUCTIONS: Record<ReferenceImageRole, string> = {
+  overall:
+    "Use this as broad visual inspiration, following the user's keep/change instructions.",
+  "face-identity":
+    "Use this as the face/person identity reference. Preserve recognizable facial features, hair, and likeness when requested; do not copy its background or pose unless asked.",
+  "body-pose":
+    "Use this as the body, clothing, or pose reference, preserving only the aspects the user's prompt asks to keep.",
+  "style-color":
+    "Use this for art style, palette, lighting, texture, and visual treatment; do not copy unrelated subjects or layout.",
+  "object-scene":
+    "Use this for the referenced object, subject, or scene elements, incorporating only what the user's prompt requests.",
+};
+
+export function buildReferenceImageInstructions(
+  referenceImages: GenerationReferenceImage[]
+): string {
+  if (referenceImages.length === 0) return "";
+  const instructions = referenceImages
+    .map(
+      (image, index) =>
+        `- Reference image ${index + 1}: ${REFERENCE_ROLE_INSTRUCTIONS[image.role]}`
+    )
+    .join("\n");
+  return `\n\nREFERENCE IMAGE GUIDANCE:\nUse each attached image according to its assigned role. Follow the user's explicit instructions about what to preserve or change above all else.\n${instructions}`;
+}
+
+function fallbackComposition(
+  options: StoredGenerationOptions,
+  pageIndex: number
+): string {
   const size = sizeDefinitions[options.sizePreset];
-  const pageContext = options.pageCount > 1
-    ? `This is page ${pageIndex + 1} of ${options.pageCount}; make it distinct but visually coherent with the other pages.`
-    : "Create one complete standalone page.";
+  const pageContext =
+    options.pageCount > 1
+      ? `This is page ${pageIndex + 1} of ${options.pageCount}; make it distinct but visually coherent with the other pages.`
+      : "Create one complete standalone page.";
 
   if (options.outputStyle === "coloring") {
     return `Create a detailed black-and-white line-art art page based exactly on this request: ${options.prompt}. ${pageContext} Use a ${size.label} composition with thick, crisp, clean outlines, high-contrast black ink on pure white, open spaces to color, and a clear centered scene. ${COLORING_NEGATIVE_PROMPT}`;
@@ -72,7 +188,10 @@ function fallbackComposition(options: StoredGenerationOptions, pageIndex: number
   return `Create one complete flat printable art page based exactly on this request: ${options.prompt}. ${pageContext} Use a ${size.label} composition, edge-to-edge artwork, crisp clean details, professional print-ready layout, rich vivid color, high contrast, clean spacing, and no watermarks or branding. Do not show a photographed sheet, mockup, border, or paper background.`;
 }
 
-async function planPageComposition(options: StoredGenerationOptions, pageIndex: number): Promise<string> {
+async function planPageComposition(
+  options: StoredGenerationOptions,
+  pageIndex: number
+): Promise<string> {
   try {
     return await enhancePromptWithGpt4o({
       prompt: options.prompt,
@@ -82,14 +201,20 @@ async function planPageComposition(options: StoredGenerationOptions, pageIndex: 
       pageCount: options.pageCount,
     });
   } catch (error) {
-    console.warn("GPT-4o prompt enhancement failed; using the direct prompt:", error);
+    console.warn(
+      "GPT-4o prompt enhancement failed; using the direct prompt:",
+      error
+    );
     return fallbackComposition(options, pageIndex);
   }
 }
 
 async function downloadAsPng(url: string): Promise<Buffer> {
   const response = await fetch(url);
-  if (!response.ok) throw new Error(`Unable to retrieve the generated image (${response.status})`);
+  if (!response.ok)
+    throw new Error(
+      `Unable to retrieve the generated image (${response.status})`
+    );
   const source = Buffer.from(await response.arrayBuffer());
   return sharp(source).png({ compressionLevel: 9 }).toBuffer();
 }
@@ -97,40 +222,67 @@ async function downloadAsPng(url: string): Promise<Buffer> {
 async function generateCustomerPageImage(
   imagePrompt: string,
   outputStyle: StoredGenerationOptions["outputStyle"],
-  aspectRatio: FalAspectRatio
+  aspectRatio: FalAspectRatio,
+  referenceImages: GenerationReferenceImage[]
 ): Promise<Buffer> {
+  const completePrompt = `${imagePrompt}${buildReferenceImageInstructions(referenceImages)}`;
+  if (referenceImages.length > 0)
+    return generatePublicationImage(completePrompt, referenceImages);
   // This mirrors Railway Quick Create: GPT Image 2 carries text-heavy, full-color
   // publications, while FAL handles the high-contrast coloring-page route.
-  if (outputStyle === "full-color") return generatePublicationImage(imagePrompt);
-  const falUrl = await generateFalImage(imagePrompt, aspectRatio);
+  if (outputStyle === "full-color")
+    return generatePublicationImage(completePrompt);
+  const falUrl = await generateFalImage(completePrompt, aspectRatio);
   return downloadAsPng(falUrl);
 }
 
-async function finalizeIfComplete(jobId: string): Promise<PublicGenerationJob | null> {
+async function finalizeIfComplete(
+  jobId: string
+): Promise<PublicGenerationJob | null> {
   const current = await getGenerationJob(jobId);
   if (!current || current.currentPage < current.pageCount) return current;
 
-  const successful = current.pageResults.filter(page => page.status === "success");
+  const successful = current.pageResults.filter(
+    page => page.status === "success"
+  );
   if (successful.length === 0) {
-    await updateGenerationJob(jobId, { status: "error", statusMessage: "No pages could be generated", errorMessage: "All page-generation attempts failed." });
+    await updateGenerationJob(jobId, {
+      status: "error",
+      statusMessage: "No pages could be generated",
+      errorMessage: "All page-generation attempts failed.",
+      referenceImages: null,
+    });
     return getGenerationJob(jobId);
   }
 
-  await updateGenerationJob(jobId, { status: "assembling", statusMessage: "Assembling your PDF..." });
+  await updateGenerationJob(jobId, {
+    status: "assembling",
+    statusMessage: "Assembling your PDF...",
+    referenceImages: null,
+  });
   const assemblyJob = await getGenerationJob(jobId);
   if (!assemblyJob) return null;
 
   try {
     const pdfUrl = await assembleGenerationPdf(assemblyJob as never);
-    const status = successful.length === current.pageCount ? "complete" : "partial";
+    const status =
+      successful.length === current.pageCount ? "complete" : "partial";
     await updateGenerationJob(jobId, {
       status,
-      statusMessage: status === "complete" ? "Your printable PDF is ready" : "Your PDF is ready with completed pages",
+      statusMessage:
+        status === "complete"
+          ? "Your printable PDF is ready"
+          : "Your PDF is ready with completed pages",
       pdfUrl,
     });
   } catch (error) {
-    const message = error instanceof Error ? error.message : "PDF assembly failed";
-    await updateGenerationJob(jobId, { status: "partial", statusMessage: "Pages are ready, but PDF assembly failed", errorMessage: message });
+    const message =
+      error instanceof Error ? error.message : "PDF assembly failed";
+    await updateGenerationJob(jobId, {
+      status: "partial",
+      statusMessage: "Pages are ready, but PDF assembly failed",
+      errorMessage: message,
+    });
   }
   return getGenerationJob(jobId);
 }
@@ -143,7 +295,9 @@ export function hasUnlimitedGenerationAccess(
   isDirectOwner = false
 ): boolean {
   const configuredOwner = process.env.OWNER_OPEN_ID;
-  return isDirectOwner || Boolean(configuredOwner && userId === configuredOwner);
+  return (
+    isDirectOwner || Boolean(configuredOwner && userId === configuredOwner)
+  );
 }
 
 export async function startCustomerGeneration(
@@ -186,23 +340,37 @@ export async function advanceCustomerGeneration(
     branding: "none",
     showPageNumbers: false,
     upscale: false,
+    referenceImages: claimed.referenceImages ?? [],
   };
   const pageNumber = claimed.currentPage + 1;
 
   try {
-    await updateGenerationJob(jobId, { statusMessage: `Generating page ${pageNumber} of ${claimed.pageCount}...` });
+    await updateGenerationJob(jobId, {
+      statusMessage: `Generating page ${pageNumber} of ${claimed.pageCount}...`,
+    });
     const composition = await planPageComposition(options, claimed.currentPage);
     const png = await generateCustomerPageImage(
       composition,
       options.outputStyle,
-      sizeDefinitions[options.sizePreset].aspect
+      sizeDefinitions[options.sizePreset].aspect,
+      options.referenceImages
     );
-    const { url: imageUrl } = await storagePut(`generated/${jobId}/page-${String(pageNumber).padStart(3, "0")}.png`, png, "image/png");
+    const { url: imageUrl } = await storagePut(
+      `generated/${jobId}/page-${String(pageNumber).padStart(3, "0")}.png`,
+      png,
+      "image/png"
+    );
     await appendPageResult(jobId, { pageNumber, imageUrl, status: "success" });
   } catch (error) {
-    const message = error instanceof Error ? error.message : "Image generation failed";
+    const message =
+      error instanceof Error ? error.message : "Image generation failed";
     console.error(`Generation failed for page ${pageNumber}:`, message);
-    await appendPageResult(jobId, { pageNumber, imageUrl: "", status: "error", error: message });
+    await appendPageResult(jobId, {
+      pageNumber,
+      imageUrl: "",
+      status: "error",
+      error: message,
+    });
   }
 
   return finalizeIfComplete(jobId);

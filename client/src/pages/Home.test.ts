@@ -2,7 +2,10 @@ import { readFileSync } from "node:fs";
 import { fileURLToPath } from "node:url";
 import { describe, expect, it } from "vitest";
 
-const source = readFileSync(fileURLToPath(new URL("./Home.tsx", import.meta.url)), "utf8");
+const source = readFileSync(
+  fileURLToPath(new URL("./Home.tsx", import.meta.url)),
+  "utf8"
+);
 
 describe("customer Quick Create interface", () => {
   it("offers exactly the five approved page-count choices", () => {
@@ -20,6 +23,13 @@ describe("customer Quick Create interface", () => {
   });
 
   it("submits only the approved public generation payload", () => {
-    expect(source).toContain("startMutation.mutate({ prompt: prompt.trim(), outputStyle, sizePreset, pageCount })");
+    expect(source).toContain("startMutation.mutate({");
+    expect(source).toContain("prompt: prompt.trim(),");
+    expect(source).toMatch(
+      /referenceImages: referenceImages\.map\(\(\{ data, mimeType, role \}\) => \(\{\s*data,\s*mimeType,\s*role,?\s*\}\)\)/
+    );
+    expect(source).not.toContain("branding:");
+    expect(source).not.toContain("showPageNumbers:");
+    expect(source).not.toContain("upscale:");
   });
 });
