@@ -31,7 +31,9 @@ export default function OwnerWorkspacePage() {
 
   const handleLogin = async (event: FormEvent<HTMLFormElement>) => {
     event.preventDefault();
-    if (!password || busy) return;
+    if (busy) return;
+    const formPassword = new FormData(event.currentTarget).get("password");
+    if (typeof formPassword !== "string" || !formPassword) return;
     setBusy(true);
     setError("");
     try {
@@ -39,7 +41,7 @@ export default function OwnerWorkspacePage() {
         method: "POST",
         credentials: "include",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ password }),
+        body: JSON.stringify({ password: formPassword }),
       });
       if (response.ok) {
         setPassword("");
@@ -104,6 +106,9 @@ export default function OwnerWorkspacePage() {
               name="password"
               type="password"
               autoComplete="current-password"
+              autoCapitalize="none"
+              autoCorrect="off"
+              spellCheck={false}
               required
               value={password}
               onChange={event => setPassword(event.target.value)}
@@ -116,12 +121,7 @@ export default function OwnerWorkspacePage() {
               {error}
             </p>
           )}
-          <Button
-            type="submit"
-            disabled={busy || !password}
-            size="lg"
-            className="w-full"
-          >
+          <Button type="submit" disabled={busy} size="lg" className="w-full">
             {busy ? (
               <Loader2 className="mr-2 h-4 w-4 animate-spin" />
             ) : (
