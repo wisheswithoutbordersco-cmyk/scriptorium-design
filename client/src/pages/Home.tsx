@@ -5,7 +5,7 @@ import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/com
 import { Label } from "@/components/ui/label";
 import { Progress } from "@/components/ui/progress";
 import { Textarea } from "@/components/ui/textarea";
-import { Download, FileText, ImageIcon, Loader2, Sparkles, Wand2 } from "lucide-react";
+import { Download, FileText, ImageIcon, Loader2, LogOut, Sparkles, Wand2 } from "lucide-react";
 import { toast } from "sonner";
 import { trpc } from "@/lib/trpc";
 
@@ -26,12 +26,13 @@ function ChoiceButton({ active, children, ...props }: React.ButtonHTMLAttributes
   return <button type="button" className={`studio-choice ${active ? "studio-choice--active" : ""}`} {...props}>{children}</button>;
 }
 
-export default function Home() {
+export default function Home({ ownerMode = false }: { ownerMode?: boolean }) {
   const [prompt, setPrompt] = useState("");
   const [outputStyle, setOutputStyle] = useState<OutputStyle>("full-color");
   const [sizePreset, setSizePreset] = useState<SizePreset>("8.5x11-portrait");
   const [pageCount, setPageCount] = useState<(typeof PAGE_COUNTS)[number]>(1);
   const [jobId, setJobId] = useState<string | null>(null);
+  const [ownerLogoutPending, setOwnerLogoutPending] = useState(false);
   const utils = trpc.useUtils();
   const jobQuery = trpc.generation.status.useQuery({ jobId: jobId ?? "" }, { enabled: Boolean(jobId), refetchInterval: jobId ? 1_500 : false });
   const advanceMutation = trpc.generation.advance.useMutation({
@@ -59,15 +60,31 @@ export default function Home() {
     startMutation.mutate({ prompt: prompt.trim(), outputStyle, sizePreset, pageCount });
   };
 
+  const handleOwnerLogout = async () => {
+    setOwnerLogoutPending(true);
+    try {
+      const response = await fetch("/api/owner/logout", { method: "POST", credentials: "include" });
+      if (!response.ok) throw new Error("Sign out failed");
+      window.location.assign("/workspace");
+    } catch {
+      toast.error("Unable to sign out. Please try again.");
+      setOwnerLogoutPending(false);
+    }
+  };
+
   return <div className="studio-shell min-h-screen text-white">
     <header className="studio-header"><div className="container flex items-center justify-between py-4">
       <div className="flex items-center gap-3"><div className="studio-mark"><Wand2 className="h-4 w-4" /></div><div><h1 className="text-base font-semibold tracking-[-0.03em]">Production Studio</h1><p className="text-[11px] tracking-wide text-white/45">CREATE PRINT-READY ART PAGES</p></div></div>
       <div className="flex items-center gap-3">
-        <span className="studio-badge">Customer Edition</span>
-        {/* Sign-out destination comes from ClerkProvider's afterSignOutUrl. */}
-        <UserButton
-          appearance={{ elements: { avatarBox: "h-8 w-8 ring-1 ring-white/15" } }}
-        />
+        <span className="studio-badge">{ownerMode ? "Owner Workspace" : "Customer Edition"}</span>
+        {ownerMode ? (
+          <Button type="button" variant="ghost" size="sm" onClick={handleOwnerLogout} disabled={ownerLogoutPending}>
+            {ownerLogoutPending ? <Loader2 className="mr-2 h-4 w-4 animate-spin" /> : <LogOut className="mr-2 h-4 w-4" />}
+            Sign out
+          </Button>
+        ) : (
+          <UserButton appearance={{ elements: { avatarBox: "h-8 w-8 ring-1 ring-white/15" } }} />
+        )}
       </div>
     </div></header>
     <main className="container py-8 lg:py-12">

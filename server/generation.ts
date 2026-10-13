@@ -138,14 +138,22 @@ async function finalizeIfComplete(jobId: string): Promise<PublicGenerationJob | 
 /** Free tier generation limit. Users without a paid subscription get this many jobs. */
 const FREE_TIER_LIMIT = 5;
 
+export function hasUnlimitedGenerationAccess(
+  userId: string,
+  isDirectOwner = false
+): boolean {
+  const configuredOwner = process.env.OWNER_OPEN_ID;
+  return isDirectOwner || Boolean(configuredOwner && userId === configuredOwner);
+}
+
 export async function startCustomerGeneration(
   input: CustomerQuickCreateInput,
   /** Clerk user id of the signed-in customer that owns this job. */
-  userId: string
+  userId: string,
+  isDirectOwner = false
 ): Promise<PublicGenerationJob> {
   // Enforce generation limits (admin/owner bypasses)
-  const ownerOpenId = process.env.OWNER_OPEN_ID;
-  if (!ownerOpenId || userId !== ownerOpenId) {
+  if (!hasUnlimitedGenerationAccess(userId, isDirectOwner)) {
     const count = await getUserGenerationCount(userId);
     if (count >= FREE_TIER_LIMIT) {
       throw new Error(

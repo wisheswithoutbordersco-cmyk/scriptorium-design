@@ -5,8 +5,9 @@ import { Route, Switch } from "wouter";
 import ErrorBoundary from "./components/ErrorBoundary";
 import RequireAuth from "./components/RequireAuth";
 import { ThemeProvider } from "./contexts/ThemeContext";
-import Home from "./pages/Home";
-import SignInPage from "./pages/SignInPage";
+import Home from "@/pages/Home";
+import OwnerWorkspacePage from "@/pages/OwnerWorkspacePage";
+import SignInPage from "@/pages/SignInPage";
 import SignUpPage from "./pages/SignUpPage";
 
 function Router() {
@@ -18,6 +19,9 @@ function Router() {
       <Route path="/sign-in/:rest*" component={SignInPage} />
       <Route path="/sign-up" component={SignUpPage} />
       <Route path="/sign-up/:rest*" component={SignUpPage} />
+
+      {/* Separate server-authenticated owner entry; does not require Clerk OAuth. */}
+      <Route path="/workspace" component={OwnerWorkspacePage} />
 
       {/* The studio itself requires a Clerk session. */}
       <Route path={"/"}>
