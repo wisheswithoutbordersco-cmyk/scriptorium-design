@@ -1,0 +1,1 @@
+ALTER TABLE "generationJobs" ADD COLUMN "referenceImages" jsonb DEFAULT 'null'::jsonb;
