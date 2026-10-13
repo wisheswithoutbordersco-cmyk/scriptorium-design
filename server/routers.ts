@@ -5,6 +5,7 @@ import {
   customerQuickCreateSchema,
   getCustomerGeneration,
   startCustomerGeneration,
+  hasUnlimitedGenerationAccess,
 } from "./generation";
 import { getUserGenerationCount } from "./generationStore";
 import { protectedProcedure, publicProcedure, router } from "./_core/trpc";
@@ -28,12 +29,13 @@ export const appRouter = router({
     usage: protectedProcedure.query(async ({ ctx }) => {
       const count = await getUserGenerationCount(ctx.user.openId);
       const limit = 5; // FREE_TIER_LIMIT
-      const isOwner = process.env.OWNER_OPEN_ID === ctx.user.openId;
+      const isDirectOwner = ctx.user.loginMethod === "owner-password";
+      const isOwner = hasUnlimitedGenerationAccess(ctx.user.openId, isDirectOwner);
       return { used: count, limit, remaining: isOwner ? 999 : Math.max(0, limit - count), unlimited: isOwner };
     }),
     start: protectedProcedure
       .input(customerQuickCreateSchema)
-      .mutation(({ ctx, input }) => startCustomerGeneration(input, ctx.user.openId)),
+      .mutation(({ ctx, input }) => startCustomerGeneration(input, ctx.user.openId, ctx.user.loginMethod === "owner-password")),
     advance: protectedProcedure
       .input(jobIdInput)
       .mutation(({ ctx, input }) => advanceCustomerGeneration(input.jobId, ctx.user.openId)),

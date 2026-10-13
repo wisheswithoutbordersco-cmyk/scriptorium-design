@@ -5,6 +5,7 @@ import net from "net";
 import { createExpressMiddleware } from "@trpc/server/adapters/express";
 import { migrate } from "drizzle-orm/node-postgres/migrator";
 import { registerClerkAuth } from "./clerkAuth";
+import { registerOwnerAuth } from "./ownerAuth";
 import { registerStorageProxy } from "./storageProxy";
 import { appRouter } from "../routers";
 import { createContext } from "./context";
@@ -51,6 +52,7 @@ async function startServer() {
   }
 
   const app = express();
+  app.set("trust proxy", 1);
   const server = createServer(app);
   // Configure body parser with larger size limit for file uploads
   app.use(express.json({ limit: "50mb" }));
@@ -59,6 +61,7 @@ async function startServer() {
   // Clerk attaches the session (cookie or Bearer token) to every request; the
   // actual access rules live in the tRPC procedures (server/_core/trpc.ts).
   registerClerkAuth(app);
+  registerOwnerAuth(app);
   // tRPC API
   app.use(
     "/api/trpc",
