@@ -6,6 +6,8 @@ describe("GPT-4o publication-grade prompt contract", () => {
     expect(MIN_DETAILED_PROMPT_LENGTH).toBeGreaterThanOrEqual(1_100);
     expect(PUBLISHING_ART_DIRECTOR_SYSTEM_PROMPT).toContain("FORMAT & INTENT");
     expect(PUBLISHING_ART_DIRECTOR_SYSTEM_PROMPT).toContain("PAGE ARCHITECTURE");
+    expect(PUBLISHING_ART_DIRECTOR_SYSTEM_PROMPT).toContain("When reference images are attached");
+    expect(PUBLISHING_ART_DIRECTOR_SYSTEM_PROMPT).toContain("visible subject and distinctive traits");
     expect(PUBLISHING_ART_DIRECTOR_SYSTEM_PROMPT).toContain("CONTENT HIERARCHY & EXACT COPY");
     expect(PUBLISHING_ART_DIRECTOR_SYSTEM_PROMPT).toContain("TYPOGRAPHY & TEXT-ACCURACY REQUIREMENTS");
   });
@@ -19,5 +21,7 @@ describe("GPT-4o publication-grade prompt contract", () => {
   it("locks down customer-safe presentation defaults", () => {
     expect(PUBLISHING_ART_DIRECTOR_SYSTEM_PROMPT).toContain("Never add branding, a watermark, page numbers, logos, or a signature");
     expect(PUBLISHING_ART_DIRECTOR_SYSTEM_PROMPT).toContain("edge-to-edge finished printable page");
+    expect(PUBLISHING_ART_DIRECTOR_SYSTEM_PROMPT).toContain("sharp focal clarity");
+    expect(PUBLISHING_ART_DIRECTOR_SYSTEM_PROMPT).toContain("directional lighting");
   });
 });

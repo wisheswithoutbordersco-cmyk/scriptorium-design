@@ -34,7 +34,7 @@ export type StoredGenerationOptions = {
 
 export type PublicGenerationJob = Omit<
   GenerationJob,
-  "processing" | "referenceImages"
+  "processing" | "referenceImages" | "referenceImageCount"
 >;
 
 function toPublicJob(job: GenerationJob): PublicGenerationJob {
@@ -77,6 +77,7 @@ export async function createGenerationJob(
     pageCount: options.pageCount,
     referenceImages:
       options.referenceImages.length > 0 ? options.referenceImages : null,
+    referenceImageCount: options.referenceImages.length,
     statusMessage: "Ready to generate",
     pageResults: [],
     filename: `scriptorium-${Date.now()}.pdf`,

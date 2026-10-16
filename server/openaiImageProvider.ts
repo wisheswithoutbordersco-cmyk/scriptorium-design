@@ -4,7 +4,7 @@ const OPENAI_IMAGES_ENDPOINT = "https://api.openai.com/v1/images/generations";
 const OPENAI_IMAGE_EDITS_ENDPOINT = "https://api.openai.com/v1/images/edits";
 export const OPENAI_PUBLICATION_IMAGE_MODEL = "gpt-image-2.5-sunburst";
 
-const OPENAI_PUBLICATION_RENDER_REQUIREMENTS = `RENDER QUALITY REQUIREMENTS: Create one complete edge-to-edge printable page, never a photographed paper, mockup, frame, or page on a background. Use premium publishing quality, crisp clean edges, strong contrast, precise text rendering, clearly separated content groups, refined detail, and professional print-ready composition. For full-color artwork, use a bold saturated vivid palette with rich clean color separation. Avoid beige, cream, muted earth tones, dusty, desaturated, washed-out, or soft pastel treatments unless explicitly requested.`;
+const OPENAI_PUBLICATION_RENDER_REQUIREMENTS = `RENDER QUALITY REQUIREMENTS: Create one complete edge-to-edge printable page, never a photographed paper, mockup, frame, or page on a background. Use premium publishing quality, crisp clean edges, strong contrast, precise text rendering, clearly separated content groups, refined detail, and professional print-ready composition. For full-color artwork, visibly improve color richness with bold, clean saturation and strong color separation; use crisp fine detail, sharp focal clarity, and deliberate directional lighting with luminous highlights and dimensional shadows. Avoid beige, cream, muted earth tones, dusty, desaturated, washed-out, or soft pastel treatments unless explicitly requested.`;
 
 export function buildPublicationImageRequest(prompt: string) {
   return {
@@ -61,6 +61,12 @@ export async function generatePublicationImage(
   referenceImages: GenerationReferenceImage[] = []
 ): Promise<Buffer> {
   const hasReferences = referenceImages.length > 0;
+  console.info("[ImageGen] Provider request", {
+    provider: hasReferences ? "openai-image-edits" : "openai-image-generation",
+    referencesAttached: hasReferences,
+    referenceCount: referenceImages.length,
+    referenceRoles: referenceImages.map(image => image.role),
+  });
   const response = await fetch(
     hasReferences ? OPENAI_IMAGE_EDITS_ENDPOINT : OPENAI_IMAGES_ENDPOINT,
     {
@@ -80,7 +86,12 @@ export async function generatePublicationImage(
     error?: { message?: string; code?: string; type?: string };
   };
   if (!response.ok) {
-    console.error("[ImageGen] OpenAI error:", JSON.stringify(payload.error));
+    console.error("[ImageGen] OpenAI request failed", {
+      status: response.status,
+      errorCode: payload.error?.code,
+      errorType: payload.error?.type,
+      referenceCount: referenceImages.length,
+    });
     throw new Error(
       `OpenAI publication image generation failed (${response.status}): ${payload.error?.message ?? "unknown error"}`
     );
