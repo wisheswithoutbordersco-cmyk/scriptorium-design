@@ -1,13 +1,16 @@
+import type { ReferenceImageRole } from "../drizzle/schema";
+
 const OPENAI_CHAT_ENDPOINT = "https://api.openai.com/v1/chat/completions";
 const MIN_DETAILED_PROMPT_LENGTH = 1_100;
 
-const PUBLISHING_ART_DIRECTOR_SYSTEM_PROMPT = `You are Scriptorium's senior publishing art director and prompt architect. You transform a customer's brief into a detailed, structured FAL image-generation prompt for ONE complete, print-ready page.
+const PUBLISHING_ART_DIRECTOR_SYSTEM_PROMPT = `You are Scriptorium's senior publishing art director and prompt architect. You transform a customer's brief into a detailed, structured image-generation prompt for ONE complete, print-ready page.
 
 CORE INTENT RULES:
 - Treat the customer's request as authoritative. Infer the exact product type, purpose, intended audience, complexity, tone, and page conventions strictly from their words.
 - Do not turn a request into a school worksheet, quiz, math exercise, classroom activity, or answer-blank page unless the customer explicitly asks for an educational or practice-based format.
 - If the request is an infographic, educational poster, fact sheet, reference page, guide, or informational visual, preserve that informational structure. Organize the required information into a readable hierarchy rather than producing a generic illustration.
 - For every requested printable, use the content structure that genuinely belongs to it: recipes need recipe structure; planners need usable planning fields; guides need headings and ordered content; posters and infographics need a strong title, sections, accurate facts, and visual explanations.
+- When reference images are attached and the customer's brief is vague, make the visible subject and distinctive traits in those images the primary visual anchor. Do not replace them with an unrelated subject or a generic text-only layout. Follow explicit keep/change directions above this fallback.
 
 YOUR OUTPUT MUST BE A RICH PRODUCTION BRIEF WRITTEN AS A SINGLE IMAGE PROMPT. It must be significantly more detailed than the customer's request and use these labelled sections in this exact order:
 1. FORMAT & INTENT
@@ -32,7 +35,7 @@ TEXT ACCURACY REQUIREMENTS:
 
 VISUAL QUALITY REQUIREMENTS:
 - The output is a flat, edge-to-edge finished printable page, never a photographed sheet, mockup, frame, browser screenshot, or page on a background.
-- Full-color work needs a bold saturated palette, high contrast, clean color separation, crisp edges, refined texture, polished detail, and professional publishing quality. Avoid beige, cream, muted earth tones, dusty, desaturated, washed-out, or pastel treatment unless the customer requests it.
+- Full-color work needs visibly rich, clean saturation, bold color separation, high contrast, crisp fine detail and edges, sharp focal clarity, and deliberate directional lighting with luminous highlights and dimensional shadows. Avoid beige, cream, muted earth tones, dusty, desaturated, washed-out, or pastel treatment unless the customer requests it.
 - Coloring work needs pure black-and-white line art, bold clean outlines, abundant uncluttered space to color, no grey tones, no color fill, no shading, and no accidental text.
 - Never add branding, a watermark, page numbers, logos, or a signature.
 
@@ -44,6 +47,7 @@ export type PromptEnhancementInput = {
   sizeLabel: string;
   pageNumber: number;
   pageCount: number;
+  referenceRoles: ReferenceImageRole[];
 };
 
 function getOpenAIKey(): string {
@@ -71,7 +75,7 @@ export async function enhancePromptWithGpt4o(input: PromptEnhancementInput): Pro
         },
         {
           role: "user",
-          content: `CUSTOMER REQUEST:\n${input.prompt}\n\nOUTPUT STYLE: ${input.outputStyle}\nFINISHED SIZE: ${input.sizeLabel}\nPAGE: ${input.pageNumber} of ${input.pageCount}\n\nProduce the complete structured production brief now. It must preserve the customer's exact product intent, include explicit page architecture, and give the image model a detailed text manifest whenever visible copy is required.`,
+          content: `CUSTOMER REQUEST:\n${input.prompt}\n\nOUTPUT STYLE: ${input.outputStyle}\nFINISHED SIZE: ${input.sizeLabel}\nPAGE: ${input.pageNumber} of ${input.pageCount}\nREFERENCE IMAGE ROLES: ${input.referenceRoles.length > 0 ? input.referenceRoles.join(", ") : "none"}. The actual uploaded files are passed separately to the image-generation provider. If the request is vague, instruct that provider to use the visible subject and distinctive traits of the attached images as the primary visual anchor rather than substituting unrelated content.\n\nProduce the complete structured production brief now. It must preserve the customer's exact product intent, include explicit page architecture, and give the image model a detailed text manifest whenever visible copy is required.`,
         },
       ],
     }),

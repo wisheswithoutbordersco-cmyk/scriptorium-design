@@ -1,11 +1,13 @@
-import { describe, expect, it } from "vitest";
+import { describe, expect, it, vi } from "vitest";
 import {
+  assertReferenceImagesAvailable,
   buildReferenceImageInstructions,
   hasUnlimitedGenerationAccess,
   MAX_PAGE_COUNT,
   MAX_REFERENCE_IMAGES,
   normalizeReferenceImages,
   normalizeCustomerOptions,
+  planPageComposition,
 } from "./generation";
 
 describe("customer Quick Create safeguards", () => {
@@ -74,6 +76,53 @@ describe("customer Quick Create safeguards", () => {
     ]);
     expect(instructions).toContain("Reference image 1");
     expect(instructions).toContain("art style, palette, lighting, texture");
+    expect(instructions).toContain("visible subject and distinctive traits");
+  });
+
+  it("fails closed if persisted reference images are missing or mismatched", () => {
+    const reference = {
+      data: Buffer.from("image").toString("base64"),
+      mimeType: "image/jpeg" as const,
+      role: "overall" as const,
+    };
+    expect(assertReferenceImagesAvailable(1, [reference])).toEqual([reference]);
+    expect(assertReferenceImagesAvailable(0, [])).toEqual([]);
+    expect(() => assertReferenceImagesAvailable(1, [])).toThrow(
+      "Attached reference image data is unavailable"
+    );
+    expect(() => assertReferenceImagesAvailable(0, [reference])).toThrow(
+      "Attached reference image data is unavailable"
+    );
+  });
+
+  it("uses a reference-anchored fallback when prompt enhancement is unavailable", async () => {
+    const previousKey = process.env.OPENAI_API_KEY;
+    const warning = vi.spyOn(console, "warn").mockImplementation(() => {});
+    delete process.env.OPENAI_API_KEY;
+    try {
+      const options = normalizeCustomerOptions({
+        prompt: "make it better",
+        outputStyle: "full-color",
+        sizePreset: "8.5x11-portrait",
+        pageCount: 1,
+        referenceImages: [
+          {
+            data: Buffer.from("reference").toString("base64"),
+            mimeType: "image/jpeg",
+            role: "overall",
+          },
+        ],
+      });
+      const fallback = await planPageComposition(options, 0);
+      expect(fallback).toContain("make it better");
+      expect(fallback).toContain("uploaded image(s) are visual source material");
+      expect(fallback).toContain("primary subject of the page");
+      expect(fallback).toContain("luminous directional lighting");
+    } finally {
+      if (previousKey === undefined) delete process.env.OPENAI_API_KEY;
+      else process.env.OPENAI_API_KEY = previousKey;
+      warning.mockRestore();
+    }
   });
 
   it("rejects excess, malformed, and oversized reference images", () => {

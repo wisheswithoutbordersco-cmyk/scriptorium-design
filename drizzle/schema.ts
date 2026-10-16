@@ -94,6 +94,7 @@ export const generationJobs = pgTable("generationJobs", {
   referenceImages: jsonb("referenceImages")
     .$type<GenerationReferenceImage[] | null>()
     .default(null),
+  referenceImageCount: integer("referenceImageCount").notNull().default(0),
   currentPage: integer("currentPage").notNull().default(0),
   processing: boolean("processing").notNull().default(false),
   status: generationStatusEnum("status").notNull().default("queued"),

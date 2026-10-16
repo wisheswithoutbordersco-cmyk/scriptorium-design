@@ -1,8 +1,10 @@
-import sharp from "sharp";
 import { z } from "zod";
 import { enhancePromptWithGpt4o } from "./openaiProvider";
-import { generatePublicationImage } from "./openaiImageProvider";
-import { generateFalImage, type FalAspectRatio } from "./falProvider";
+import {
+  buildReferenceImageInstructions,
+  generateCustomerPageImage,
+} from "./customerImageGenerator";
+import type { FalAspectRatio } from "./falProvider";
 import { assembleGenerationPdf } from "./generationPdf";
 import {
   appendPageResult,
@@ -145,33 +147,9 @@ export function normalizeReferenceImages(
   });
 }
 
-const REFERENCE_ROLE_INSTRUCTIONS: Record<ReferenceImageRole, string> = {
-  overall:
-    "Use this as broad visual inspiration, following the user's keep/change instructions.",
-  "face-identity":
-    "Use this as the face/person identity reference. Preserve recognizable facial features, hair, and likeness when requested; do not copy its background or pose unless asked.",
-  "body-pose":
-    "Use this as the body, clothing, or pose reference, preserving only the aspects the user's prompt asks to keep.",
-  "style-color":
-    "Use this for art style, palette, lighting, texture, and visual treatment; do not copy unrelated subjects or layout.",
-  "object-scene":
-    "Use this for the referenced object, subject, or scene elements, incorporating only what the user's prompt requests.",
-};
+export { buildReferenceImageInstructions };
 
-export function buildReferenceImageInstructions(
-  referenceImages: GenerationReferenceImage[]
-): string {
-  if (referenceImages.length === 0) return "";
-  const instructions = referenceImages
-    .map(
-      (image, index) =>
-        `- Reference image ${index + 1}: ${REFERENCE_ROLE_INSTRUCTIONS[image.role]}`
-    )
-    .join("\n");
-  return `\n\nREFERENCE IMAGE GUIDANCE:\nUse each attached image according to its assigned role. Follow the user's explicit instructions about what to preserve or change above all else.\n${instructions}`;
-}
-
-function fallbackComposition(
+export function fallbackComposition(
   options: StoredGenerationOptions,
   pageIndex: number
 ): string {
@@ -182,13 +160,13 @@ function fallbackComposition(
       : "Create one complete standalone page.";
 
   if (options.outputStyle === "coloring") {
-    return `Create a detailed black-and-white line-art art page based exactly on this request: ${options.prompt}. ${pageContext} Use a ${size.label} composition with thick, crisp, clean outlines, high-contrast black ink on pure white, open spaces to color, and a clear centered scene. ${COLORING_NEGATIVE_PROMPT}`;
+    return `Create a detailed black-and-white line-art art page based exactly on this request: ${options.prompt}. ${pageContext} Use a ${size.label} composition with thick, crisp, clean outlines, high-contrast black ink on pure white, open spaces to color, and a clear centered scene. ${COLORING_NEGATIVE_PROMPT}${buildReferenceImageInstructions(options.referenceImages)}`;
   }
 
-  return `Create one complete flat printable art page based exactly on this request: ${options.prompt}. ${pageContext} Use a ${size.label} composition, edge-to-edge artwork, crisp clean details, professional print-ready layout, rich vivid color, high contrast, clean spacing, and no watermarks or branding. Do not show a photographed sheet, mockup, border, or paper background.`;
+  return `Create one complete flat printable art page based exactly on this request: ${options.prompt}. ${pageContext} Use a ${size.label} composition, edge-to-edge artwork, crisp clean details, professional print-ready layout, visibly rich vivid color, clean color separation, sharp focal clarity, luminous directional lighting with dimensional shadows, high contrast, clean spacing, and no watermarks or branding. Do not show a photographed sheet, mockup, border, or paper background.${buildReferenceImageInstructions(options.referenceImages)}`;
 }
 
-async function planPageComposition(
+export async function planPageComposition(
   options: StoredGenerationOptions,
   pageIndex: number
 ): Promise<string> {
@@ -199,41 +177,18 @@ async function planPageComposition(
       sizeLabel: sizeDefinitions[options.sizePreset].label,
       pageNumber: pageIndex + 1,
       pageCount: options.pageCount,
+      referenceRoles: options.referenceImages.map(image => image.role),
     });
   } catch (error) {
     console.warn(
-      "GPT-4o prompt enhancement failed; using the direct prompt:",
-      error
+      "GPT-4o prompt enhancement failed; using the reference-aware direct fallback.",
+      {
+        errorName: error instanceof Error ? error.name : "UnknownError",
+        referenceCount: options.referenceImages.length,
+      }
     );
     return fallbackComposition(options, pageIndex);
   }
-}
-
-async function downloadAsPng(url: string): Promise<Buffer> {
-  const response = await fetch(url);
-  if (!response.ok)
-    throw new Error(
-      `Unable to retrieve the generated image (${response.status})`
-    );
-  const source = Buffer.from(await response.arrayBuffer());
-  return sharp(source).png({ compressionLevel: 9 }).toBuffer();
-}
-
-async function generateCustomerPageImage(
-  imagePrompt: string,
-  outputStyle: StoredGenerationOptions["outputStyle"],
-  aspectRatio: FalAspectRatio,
-  referenceImages: GenerationReferenceImage[]
-): Promise<Buffer> {
-  const completePrompt = `${imagePrompt}${buildReferenceImageInstructions(referenceImages)}`;
-  if (referenceImages.length > 0)
-    return generatePublicationImage(completePrompt, referenceImages);
-  // This mirrors Railway Quick Create: GPT Image 2 carries text-heavy, full-color
-  // publications, while FAL handles the high-contrast coloring-page route.
-  if (outputStyle === "full-color")
-    return generatePublicationImage(completePrompt);
-  const falUrl = await generateFalImage(completePrompt, aspectRatio);
-  return downloadAsPng(falUrl);
 }
 
 async function finalizeIfComplete(
@@ -300,6 +255,18 @@ export function hasUnlimitedGenerationAccess(
   );
 }
 
+export function assertReferenceImagesAvailable(
+  expectedCount: number,
+  referenceImages: GenerationReferenceImage[]
+): GenerationReferenceImage[] {
+  if (referenceImages.length !== expectedCount) {
+    throw new Error(
+      "Attached reference image data is unavailable. Please restart this generation."
+    );
+  }
+  return referenceImages;
+}
+
 export async function startCustomerGeneration(
   input: CustomerQuickCreateInput,
   /** Clerk user id of the signed-in customer that owns this job. */
@@ -345,6 +312,10 @@ export async function advanceCustomerGeneration(
   const pageNumber = claimed.currentPage + 1;
 
   try {
+    options.referenceImages = assertReferenceImagesAvailable(
+      claimed.referenceImageCount,
+      options.referenceImages
+    );
     await updateGenerationJob(jobId, {
       statusMessage: `Generating page ${pageNumber} of ${claimed.pageCount}...`,
     });
@@ -353,6 +324,7 @@ export async function advanceCustomerGeneration(
       composition,
       options.outputStyle,
       sizeDefinitions[options.sizePreset].aspect,
+      options.sizePreset,
       options.referenceImages
     );
     const { url: imageUrl } = await storagePut(
@@ -364,7 +336,10 @@ export async function advanceCustomerGeneration(
   } catch (error) {
     const message =
       error instanceof Error ? error.message : "Image generation failed";
-    console.error(`Generation failed for page ${pageNumber}:`, message);
+    console.error(`Generation failed for page ${pageNumber}`, {
+      errorName: error instanceof Error ? error.name : "UnknownError",
+      referenceCount: options.referenceImages.length,
+    });
     await appendPageResult(jobId, {
       pageNumber,
       imageUrl: "",

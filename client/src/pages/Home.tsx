@@ -384,7 +384,9 @@ export default function Home({ ownerMode = false }: { ownerMode?: boolean }) {
                 </div>
                 <p className="text-xs leading-5 text-white/50">
                   Add up to four photos for identity, body/pose, style, or scene
-                  guidance. Your prompt tells us what to keep or change.
+                  guidance. Your prompt tells us what to keep or change. AI uses
+                  photos as guidance; exact identity or semantic similarity is
+                  not guaranteed.
                 </p>
                 <input
                   ref={referenceInputRef}
@@ -615,7 +617,14 @@ export default function Home({ ownerMode = false }: { ownerMode?: boolean }) {
                         >
                           <img
                             src={page.imageUrl}
+                            alt=""
+                            aria-hidden="true"
+                            className="studio-thumbnail__backdrop"
+                          />
+                          <img
+                            src={page.imageUrl}
                             alt={`Completed page ${page.pageNumber}`}
+                            className="studio-thumbnail__image"
                           />
                           <span>Page {page.pageNumber}</span>
                         </a>
